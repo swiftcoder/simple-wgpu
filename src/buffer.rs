@@ -150,6 +150,14 @@ impl Buffer {
     }
 }
 
+impl BufferBinding {
+    pub fn dynamic_offset(mut self, min_binding_size: u64) -> Self {
+        self.has_dynamic_offset = true;
+        self.min_binding_size = NonZeroU64::new(min_binding_size);
+        self
+    }
+}
+
 impl Hash for Buffer {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.id.hash(state);
