@@ -7,7 +7,7 @@ use simple_wgpu::{
     Context, DrawCall, RasteriserState, RenderPipeline, RenderPipelineBuilder, RenderTexture,
     Shader, Texture, VertexBufferLayout,
 };
-use std::{f32::consts, future::Future, mem, num::NonZeroU32, pin::Pin, task};
+use std::{f32::consts, future::Future, mem, pin::Pin, task};
 use wgpu::include_wgsl;
 
 #[repr(C)]
@@ -180,7 +180,7 @@ impl framework::Example for Example {
                 view_formats: &[],
             },
             &texels,
-            NonZeroU32::new(size),
+            Some(size),
             context,
         );
 

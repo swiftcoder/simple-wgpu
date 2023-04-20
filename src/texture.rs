@@ -1,4 +1,4 @@
-use std::{hash::Hash, num::NonZeroU32, sync::Arc};
+use std::{hash::Hash, sync::Arc};
 
 use uuid::Uuid;
 
@@ -12,7 +12,7 @@ pub struct Texture {
     id: Uuid,
     texture: Arc<wgpu::Texture>,
     base_mip_level: u32,
-    mip_level_count: Option<NonZeroU32>,
+    mip_level_count: u32,
     sample_count: u32,
 }
 
@@ -32,7 +32,7 @@ impl Texture {
             id: Uuid::new_v4(),
             texture: Arc::new(texture),
             base_mip_level: 0,
-            mip_level_count: NonZeroU32::new(desc.mip_level_count),
+            mip_level_count: desc.mip_level_count,
             sample_count: desc.sample_count,
         }
     }
@@ -41,7 +41,7 @@ impl Texture {
     pub fn with_data(
         desc: &wgpu::TextureDescriptor,
         data: &[u8],
-        bytes_per_row: Option<NonZeroU32>,
+        bytes_per_row: Option<u32>,
         context: &Context,
     ) -> Self {
         let texture = context.device().create_texture(desc);
@@ -62,7 +62,7 @@ impl Texture {
             id: Uuid::new_v4(),
             texture: Arc::new(texture),
             base_mip_level: 0,
-            mip_level_count: NonZeroU32::new(desc.mip_level_count),
+            mip_level_count: desc.mip_level_count,
             sample_count: desc.sample_count,
         }
     }
@@ -114,7 +114,7 @@ impl Texture {
         }
     }
 
-    pub fn view(&self, base_mip_level: u32, mip_level_count: Option<NonZeroU32>) -> Texture {
+    pub fn view(&self, base_mip_level: u32, mip_level_count: u32) -> Texture {
         Self {
             id: self.id.clone(),
             texture: self.texture.clone(),
@@ -180,7 +180,7 @@ impl Texture {
                     dimension: None,
                     aspect: wgpu::TextureAspect::All,
                     base_mip_level: self.base_mip_level,
-                    mip_level_count: self.mip_level_count,
+                    mip_level_count: Some(self.mip_level_count),
                     base_array_layer: 0,
                     array_layer_count: None,
                 }))
