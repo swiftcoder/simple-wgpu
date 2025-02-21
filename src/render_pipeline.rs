@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use wgpu::PipelineCompilationOptions;
 
 use crate::{
     bind_group::BindGroup, context::Context, draw_call::RasteriserState,
@@ -52,12 +52,12 @@ impl RenderPipeline {
         rasteriser_state: &RasteriserState,
         bind_groups: &[BindGroup],
         context: &Context,
-    ) -> Arc<wgpu::RenderPipeline> {
+    ) -> wgpu::RenderPipeline {
         let layout = PipelineLayout {
             bind_group_layouts: bind_groups.iter().map(|b| b.build_layout()).collect(),
         };
 
-        let mut pipeline_cache = context.ctx.caches.render_pipeline_cache.borrow_mut();
+        let mut pipeline_cache = context.caches.render_pipeline_cache.borrow_mut();
 
         let key = RenderPipelineCacheKey {
             layout: layout.clone(),
@@ -97,8 +97,9 @@ impl RenderPipeline {
                     vec![]
                 };
 
-                Arc::new(context.device().create_render_pipeline(
-                    &wgpu::RenderPipelineDescriptor {
+                context
+                    .device()
+                    .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
                         label: self.label.as_deref(),
                         layout: Some(&layout),
                         primitive: wgpu::PrimitiveState {
@@ -109,14 +110,16 @@ impl RenderPipeline {
                         },
                         vertex: wgpu::VertexState {
                             module: &self.vertex.0.shader,
-                            entry_point: &self.vertex.0.entry_point,
+                            entry_point: Some(&self.vertex.0.entry_point),
                             buffers: &buffers,
+                            compilation_options: PipelineCompilationOptions::default(),
                         },
                         fragment: self.fragment.as_ref().map(|(entry_point, _)| {
                             wgpu::FragmentState {
                                 module: &entry_point.shader,
-                                entry_point: &entry_point.entry_point,
+                                entry_point: Some(&entry_point.entry_point),
                                 targets: &targets,
+                                compilation_options: PipelineCompilationOptions::default(),
                             }
                         }),
                         depth_stencil: depth_format.map(|format| wgpu::DepthStencilState {
@@ -128,8 +131,8 @@ impl RenderPipeline {
                         }),
                         multisample: multisample.unwrap_or_default(),
                         multiview: None,
-                    },
-                ))
+                        cache: None,
+                    })
             })
             .clone()
     }

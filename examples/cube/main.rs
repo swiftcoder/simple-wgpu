@@ -133,10 +133,6 @@ impl Example {
 }
 
 impl framework::Example for Example {
-    fn optional_features() -> wgt::Features {
-        wgt::Features::POLYGON_MODE_LINE
-    }
-
     fn init(
         config: &wgpu::SurfaceConfiguration,
         _adapter: &wgpu::Adapter,
@@ -283,7 +279,7 @@ impl framework::Example for Example {
             .write(bytemuck::cast_slice(mx_ref), context);
     }
 
-    fn render(&mut self, target: &RenderTexture, context: &Context, spawner: &framework::Spawner) {
+    fn render(&mut self, target: &RenderTexture, context: &Context) {
         context
             .device()
             .push_error_scope(wgpu::ErrorFilter::Validation);
@@ -303,7 +299,7 @@ impl framework::Example for Example {
                             b: 0.3,
                             a: 1.0,
                         }),
-                        store: true,
+                        store: wgt::StoreOp::Store,
                     },
                 }],
                 None,
@@ -341,11 +337,6 @@ impl framework::Example for Example {
                 });
             }
         }
-
-        // If an error occurs, report it and panic.
-        spawner.spawn_local(ErrorFuture {
-            inner: context.device().pop_error_scope(),
-        });
     }
 }
 

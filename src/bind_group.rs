@@ -1,4 +1,4 @@
-use std::{collections::HashMap, hash::Hash, num::NonZeroU64, sync::Arc};
+use std::{collections::HashMap, hash::Hash, num::NonZeroU64};
 
 use crate::{buffer::BufferBinding, context::Context, sampler::Sampler, texture::TextureBinding};
 
@@ -25,17 +25,17 @@ pub(crate) struct BindGroupLayout {
 }
 
 impl BindGroupLayout {
-    pub(crate) fn get_or_build(&self, context: &Context) -> Arc<wgpu::BindGroupLayout> {
-        let mut bind_group_layout_cache = context.ctx.caches.bind_group_layout_cache.borrow_mut();
+    pub(crate) fn get_or_build(&self, context: &Context) -> wgpu::BindGroupLayout {
+        let mut bind_group_layout_cache = context.caches.bind_group_layout_cache.borrow_mut();
 
         bind_group_layout_cache
             .get_or_insert_with(self.clone(), || {
-                Arc::new(context.device().create_bind_group_layout(
-                    &wgpu::BindGroupLayoutDescriptor {
+                context
+                    .device()
+                    .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                         label: None,
                         entries: &self.layout,
-                    },
-                ))
+                    })
             })
             .clone()
     }
@@ -87,8 +87,8 @@ impl BindGroup {
         BindGroupLayout { layout }
     }
 
-    pub(crate) fn get_or_build(&self, context: &Context) -> Arc<wgpu::BindGroup> {
-        let mut bind_group_cache = context.ctx.caches.bind_group_cache.borrow_mut();
+    pub(crate) fn get_or_build(&self, context: &Context) -> wgpu::BindGroup {
+        let mut bind_group_cache = context.caches.bind_group_cache.borrow_mut();
 
         bind_group_cache
             .get_or_insert_with(self.clone(), || {
@@ -137,15 +137,13 @@ impl BindGroup {
                     })
                     .collect::<Vec<_>>();
 
-                Arc::new(
-                    context
-                        .device()
-                        .create_bind_group(&wgpu::BindGroupDescriptor {
-                            label: self.name.as_deref(),
-                            layout: &gpu_layout,
-                            entries: &gpu_bindings,
-                        }),
-                )
+                context
+                    .device()
+                    .create_bind_group(&wgpu::BindGroupDescriptor {
+                        label: self.name.as_deref(),
+                        layout: &gpu_layout,
+                        entries: &gpu_bindings,
+                    })
             })
             .clone()
     }

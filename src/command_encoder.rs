@@ -1,4 +1,3 @@
-use std::num::NonZeroU64;
 
 use crate::{
     buffer::Buffer,
@@ -19,7 +18,7 @@ pub(crate) enum Pass {
         draw_calls: Vec<DrawCall>,
     },
     Compute(Option<String>, Vec<Dispatch>),
-    ClearBuffer(Buffer, u64, Option<NonZeroU64>),
+    ClearBuffer(Buffer, u64, Option<u64>),
     CopyBufferToBuffer {
         source: Buffer,
         source_offset: usize,
@@ -72,7 +71,7 @@ impl CommandEncoder {
         )
     }
 
-    pub fn clear_buffer(&mut self, buffer: &Buffer, offset: u64, size: Option<NonZeroU64>) {
+    pub fn clear_buffer(&mut self, buffer: &Buffer, offset: u64, size: Option<u64>) {
         self.passes
             .push(Pass::ClearBuffer(buffer.clone(), offset, size));
     }
@@ -175,6 +174,7 @@ impl CommandEncoder {
 
         let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
             label: label.as_deref(),
+            timestamp_writes: None,
         });
 
         for (i, dispatch) in dispatches.iter().enumerate() {
@@ -243,7 +243,7 @@ impl CommandEncoder {
             .map(|(i, c)| {
                 Some(wgpu::RenderPassColorAttachment {
                     view: &c.target.view,
-                    resolve_target: resolve_targets[i].as_deref(),
+                    resolve_target: resolve_targets[i].as_ref(),
                     ops: c.ops,
                 })
             })
@@ -258,11 +258,13 @@ impl CommandEncoder {
             color_attachments: &color_attachments,
             depth_stencil_attachment: depth_stencil_attachment.as_ref().map(|d| {
                 wgpu::RenderPassDepthStencilAttachment {
-                    view: &depth_view.as_deref().unwrap(),
+                    view: &depth_view.as_ref().unwrap(),
                     depth_ops: d.depth_ops,
                     stencil_ops: d.stencil_ops,
                 }
             }),
+            timestamp_writes: None,
+            occlusion_query_set: None,
         };
         let mut render_pass = encoder.begin_render_pass(&desc);
 

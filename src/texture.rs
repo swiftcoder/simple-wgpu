@@ -1,4 +1,4 @@
-use std::{hash::Hash, sync::Arc};
+use std::hash::Hash;
 
 use uuid::Uuid;
 
@@ -10,7 +10,7 @@ use crate::{context::Context, RenderTexture};
 #[derive(Clone, Debug)]
 pub struct Texture {
     id: Uuid,
-    texture: Arc<wgpu::Texture>,
+    texture: wgpu::Texture,
     base_mip_level: u32,
     mip_level_count: u32,
     sample_count: u32,
@@ -30,7 +30,7 @@ impl Texture {
 
         Self {
             id: Uuid::new_v4(),
-            texture: Arc::new(texture),
+            texture,
             base_mip_level: 0,
             mip_level_count: desc.mip_level_count,
             sample_count: desc.sample_count,
@@ -49,7 +49,7 @@ impl Texture {
         context.queue().write_texture(
             texture.as_image_copy(),
             data,
-            wgpu::ImageDataLayout {
+            wgpu::TexelCopyBufferLayout {
                 offset: 0,
                 // todo: derive automatically from format?
                 bytes_per_row,
@@ -60,7 +60,7 @@ impl Texture {
 
         Self {
             id: Uuid::new_v4(),
-            texture: Arc::new(texture),
+            texture,
             base_mip_level: 0,
             mip_level_count: desc.mip_level_count,
             sample_count: desc.sample_count,
@@ -88,8 +88,7 @@ impl Texture {
             | wgpu::TextureFormat::Bgra8UnormSrgb
             | wgpu::TextureFormat::R16Float
             | wgpu::TextureFormat::Rgba16Float
-            | wgpu::TextureFormat::Rgb10a2Unorm
-            | wgpu::TextureFormat::Rg11b10Float => {
+            | wgpu::TextureFormat::Rgb10a2Unorm => {
                 wgpu::TextureSampleType::Float { filterable: true }
             }
             wgpu::TextureFormat::R8Uint
@@ -169,12 +168,12 @@ impl Texture {
         }
     }
 
-    pub(crate) fn get_or_build(&self, context: &Context) -> Arc<wgpu::TextureView> {
-        let mut texture_view_cache = context.ctx.caches.texture_view_cache.borrow_mut();
+    pub(crate) fn get_or_build(&self, context: &Context) -> wgpu::TextureView {
+        let mut texture_view_cache = context.caches.texture_view_cache.borrow_mut();
 
         texture_view_cache
             .get_or_insert_with(self.clone(), || {
-                Arc::new(self.texture.create_view(&wgpu::TextureViewDescriptor {
+                self.texture.create_view(&wgpu::TextureViewDescriptor {
                     label: None,
                     format: None,
                     dimension: None,
@@ -183,7 +182,8 @@ impl Texture {
                     mip_level_count: Some(self.mip_level_count),
                     base_array_layer: 0,
                     array_layer_count: None,
-                }))
+                    usage: None,
+                })
             })
             .clone()
     }

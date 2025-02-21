@@ -1,4 +1,3 @@
-use std::sync::Arc;
 
 use crate::context::Context;
 
@@ -23,8 +22,8 @@ impl Sampler {
         }
     }
 
-    pub(crate) fn get_or_build(&self, context: &Context) -> Arc<wgpu::Sampler> {
-        let mut sampler_cache = context.ctx.caches.sampler_cache.borrow_mut();
+    pub(crate) fn get_or_build(&self, context: &Context) -> wgpu::Sampler {
+        let mut sampler_cache = context.caches.sampler_cache.borrow_mut();
 
         let address_mode = if self.clamp {
             wgpu::AddressMode::ClampToEdge
@@ -46,7 +45,7 @@ impl Sampler {
 
         sampler_cache
             .get_or_insert_with(self.clone(), || {
-                Arc::new(context.device().create_sampler(&wgpu::SamplerDescriptor {
+                context.device().create_sampler(&wgpu::SamplerDescriptor {
                     label: Some("mip"),
                     address_mode_u: address_mode,
                     address_mode_v: address_mode,
@@ -55,7 +54,7 @@ impl Sampler {
                     min_filter: filter,
                     mipmap_filter,
                     ..Default::default()
-                }))
+                })
             })
             .clone()
     }

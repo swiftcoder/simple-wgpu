@@ -11,15 +11,13 @@ use crate::{
 };
 
 pub(crate) struct Caches {
-    pub bind_group_layout_cache: RefCell<KeyedCache<BindGroupLayout, Arc<wgpu::BindGroupLayout>>>,
-    pub bind_group_cache: RefCell<KeyedCache<BindGroup, Arc<wgpu::BindGroup>>>,
-    pub texture_view_cache: RefCell<KeyedCache<Texture, Arc<wgpu::TextureView>>>,
-    pub sampler_cache: RefCell<KeyedCache<Sampler, Arc<wgpu::Sampler>>>,
-    pub pipeline_layout_cache: RefCell<KeyedCache<PipelineLayout, Arc<wgpu::PipelineLayout>>>,
-    pub render_pipeline_cache:
-        RefCell<KeyedCache<RenderPipelineCacheKey, Arc<wgpu::RenderPipeline>>>,
-    pub compute_pipeline_cache:
-        RefCell<KeyedCache<ComputePipelineCacheKey, Arc<wgpu::ComputePipeline>>>,
+    pub bind_group_layout_cache: RefCell<KeyedCache<BindGroupLayout, wgpu::BindGroupLayout>>,
+    pub bind_group_cache: RefCell<KeyedCache<BindGroup, wgpu::BindGroup>>,
+    pub texture_view_cache: RefCell<KeyedCache<Texture, wgpu::TextureView>>,
+    pub sampler_cache: RefCell<KeyedCache<Sampler, wgpu::Sampler>>,
+    pub pipeline_layout_cache: RefCell<KeyedCache<PipelineLayout, wgpu::PipelineLayout>>,
+    pub render_pipeline_cache: RefCell<KeyedCache<RenderPipelineCacheKey, wgpu::RenderPipeline>>,
+    pub compute_pipeline_cache: RefCell<KeyedCache<ComputePipelineCacheKey, wgpu::ComputePipeline>>,
 }
 
 impl Caches {
@@ -34,16 +32,12 @@ impl Caches {
     }
 }
 
-pub(crate) struct PrivateContext {
-    pub(crate) device: wgpu::Device,
-    pub(crate) queue: wgpu::Queue,
-    pub(crate) caches: Caches,
-}
-
 /// Wraps the wgpu [Device](wgpu::Device) and [Queue](wgpu::Queue), and caches all of the wgpu resource types
 #[derive(Clone)]
 pub struct Context {
-    pub(crate) ctx: Arc<PrivateContext>,
+    pub(crate) device: wgpu::Device,
+    pub(crate) queue: wgpu::Queue,
+    pub(crate) caches: Arc<Caches>,
 }
 
 impl Context {
@@ -59,24 +53,22 @@ impl Context {
             compute_pipeline_cache: RefCell::new(KeyedCache::new()),
         };
 
-        let ctx = PrivateContext {
+        Self {
             device,
             queue,
-            caches,
-        };
-
-        Self { ctx: Arc::new(ctx) }
+            caches: Arc::new(caches),
+        }
     }
 
     pub fn device(&self) -> &wgpu::Device {
-        &self.ctx.device
+        &self.device
     }
 
     pub fn queue(&self) -> &wgpu::Queue {
-        &self.ctx.queue
+        &self.queue
     }
 
     pub(crate) fn caches(&self) -> &Caches {
-        &self.ctx.caches
+        &self.caches
     }
 }

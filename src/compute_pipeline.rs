@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use wgpu::PipelineCompilationOptions;
 
 use crate::{
     bind_group::BindGroup, context::Context, pipeline_layout::PipelineLayout, shader::EntryPoint,
@@ -24,7 +24,7 @@ impl ComputePipeline {
         &self,
         context: &Context,
         bind_groups: &[BindGroup],
-    ) -> Arc<wgpu::ComputePipeline> {
+    ) -> wgpu::ComputePipeline {
         let layout = PipelineLayout {
             bind_group_layouts: bind_groups.iter().map(|b| b.build_layout()).collect(),
         };
@@ -34,20 +34,22 @@ impl ComputePipeline {
             entry_point: self.entry_point.clone(),
         };
 
-        let mut pipeline_cache = context.ctx.caches.compute_pipeline_cache.borrow_mut();
+        let mut pipeline_cache = context.caches.compute_pipeline_cache.borrow_mut();
 
         pipeline_cache
             .get_or_insert_with(key, || {
                 let layout = layout.get_or_build(context);
 
-                Arc::new(context.device().create_compute_pipeline(
-                    &wgpu::ComputePipelineDescriptor {
+                context
+                    .device()
+                    .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
                         layout: Some(&layout),
                         module: &self.entry_point.shader,
-                        entry_point: &self.entry_point.entry_point,
+                        entry_point: Some(&self.entry_point.entry_point),
                         label: self.label.as_deref(),
-                    },
-                ))
+                        cache: None,
+                        compilation_options: PipelineCompilationOptions::default(),
+                    })
             })
             .clone()
     }

@@ -2,7 +2,6 @@ use std::{
     hash::Hash,
     num::NonZeroU64,
     ops::{Bound, Range, RangeBounds},
-    sync::Arc,
 };
 
 use uuid::Uuid;
@@ -10,20 +9,13 @@ use wgpu::util::DeviceExt;
 
 use crate::context::Context;
 
-#[derive(Debug)]
-struct BufferInternal {
-    buffer: wgpu::Buffer,
-    size: usize,
-    usage: wgpu::BufferUsages,
-}
-
 /// A handle to a GPU buffer
 ///
 /// The equivalent to [wgpu::Buffer]
 #[derive(Clone, Debug)]
 pub struct Buffer {
     id: Uuid,
-    data: Arc<BufferInternal>,
+    buffer: wgpu::Buffer,
 }
 
 /// How to bind a [Buffer] to a [BindGroup](crate::BindGroup)
@@ -52,11 +44,7 @@ impl Buffer {
 
         Self {
             id: Uuid::new_v4(),
-            data: Arc::new(BufferInternal {
-                buffer,
-                size,
-                usage,
-            }),
+            buffer,
         }
     }
 
@@ -77,38 +65,29 @@ impl Buffer {
 
         Self {
             id: Uuid::new_v4(),
-            data: Arc::new(BufferInternal {
-                buffer,
-                size: data.len(),
-                usage,
-            }),
+            buffer,
         }
     }
 
     /// Grow the buffer to `new_size`. Does nothing if the buffer is already larger than `new_size`
     pub fn ensure_capacity(&mut self, new_size: usize, context: &Context) {
-        if new_size > self.data.size {
-            Arc::get_mut(&mut self.data)
-                .map(|data| {
-                    data.size = new_size;
-                    data.buffer = context.device().create_buffer(&wgpu::BufferDescriptor {
-                        label: None,
-                        usage: data.usage,
-                        size: new_size as u64,
-                        mapped_at_creation: false,
-                    });
-                })
-                .expect("couldn't get exclusive access to resize buffer");
+        if new_size > self.buffer.size() as usize {
+            self.buffer = context.device().create_buffer(&wgpu::BufferDescriptor {
+                label: None,
+                usage: self.buffer.usage(),
+                size: new_size as u64,
+                mapped_at_creation: false,
+            });
         }
     }
 
     /// Write data to the buffer
     pub fn write(&self, data: &[u8], context: &Context) {
-        context.queue().write_buffer(&self.data.buffer, 0, data);
+        context.queue().write_buffer(&self.buffer, 0, data);
     }
 
     pub(crate) fn buffer(&self) -> &wgpu::Buffer {
-        &self.data.buffer
+        &self.buffer
     }
 
     /// Obtain a (sub) slice of the buffer
@@ -117,8 +96,8 @@ impl Buffer {
         R: RangeBounds<wgpu::BufferAddress>,
     {
         BufferSlice {
-            data: self.data.clone(),
-            bounds: constrain_range_to_container_len(bounds, self.data.size as u64),
+            buffer: self.buffer.clone(),
+            bounds: constrain_range_to_container_len(bounds, self.buffer.size()),
         }
     }
 
@@ -146,7 +125,7 @@ impl Buffer {
 
     /// See wgpu's [Buffer::unmap](wgpu::Buffer::unmap)
     pub fn unmap(&self) {
-        self.data.buffer.unmap();
+        self.buffer.unmap();
     }
 }
 
@@ -175,7 +154,7 @@ impl Eq for Buffer {}
 /// A sub-slice of a [Buffer](Buffer)
 #[derive(Debug)]
 pub struct BufferSlice {
-    data: Arc<BufferInternal>,
+    buffer: wgpu::Buffer,
     bounds: Range<wgpu::BufferAddress>,
 }
 
@@ -183,7 +162,7 @@ pub struct BufferSlice {
 impl BufferSlice {
     /// Get the underlying wgpu [Buffer](wgpu::Buffer). You'll need this to map the contents of the buffer
     pub fn get(&self) -> wgpu::BufferSlice {
-        self.data.buffer.slice(self.bounds.clone())
+        self.buffer.slice(self.bounds.clone())
     }
 }
 

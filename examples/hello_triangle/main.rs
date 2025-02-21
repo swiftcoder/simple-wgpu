@@ -1,161 +1,200 @@
+use std::sync::Arc;
+
 use simple_wgpu::{
-    ColorAttachment, CommandEncoder, Context, DrawCall, RenderPipelineBuilder, RenderTexture,
-    Shader,
+    ColorAttachment, CommandEncoder, Context, DrawCall, RenderPipeline, RenderPipelineBuilder,
+    RenderTexture, Shader,
 };
-use wgpu::include_wgsl;
+use wgpu::{include_wgsl, Surface};
 use winit::{
-    event::{Event, WindowEvent},
+    application::ApplicationHandler,
+    event::WindowEvent,
     event_loop::{ControlFlow, EventLoop},
     window::Window,
 };
 
-async fn run(event_loop: EventLoop<()>, window: Window) {
-    let size = window.inner_size();
+struct State {
+    window: Arc<Window>,
+    size: winit::dpi::PhysicalSize<u32>,
+    surface_format: wgpu::TextureFormat,
+    surface: Surface<'static>,
+    context: Context,
+    render_pipeline: RenderPipeline,
+}
 
-    let instance = wgpu::Instance::default();
+impl State {
+    async fn new(window: Arc<Window>) -> State {
+        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
+        let adapter = instance
+            .request_adapter(&wgpu::RequestAdapterOptions::default())
+            .await
+            .unwrap();
+        let (device, queue) = adapter
+            .request_device(
+                &wgpu::DeviceDescriptor::default(),
+                None, // Trace path
+            )
+            .await
+            .unwrap();
 
-    let surface = unsafe { instance.create_surface(&window) }.unwrap();
-    let adapter = instance
-        .request_adapter(&wgpu::RequestAdapterOptions {
-            power_preference: wgpu::PowerPreference::default(),
-            force_fallback_adapter: false,
-            // Request an adapter which can render to our surface
-            compatible_surface: Some(&surface),
-        })
-        .await
-        .expect("Failed to find an appropriate adapter");
+        let context = Context::new(device, queue);
 
-    // Create the logical device and command queue
-    let (device, queue) = adapter
-        .request_device(
-            &wgpu::DeviceDescriptor {
-                label: None,
-                features: wgpu::Features::empty(),
-                // Make sure we use the texture resolution limits from the adapter, so we can support images the size of the swapchain.
-                limits: wgpu::Limits::downlevel_webgl2_defaults()
-                    .using_resolution(adapter.limits()),
-            },
-            None,
-        )
-        .await
-        .expect("Failed to create device");
+        let size = window.inner_size();
 
-    let swapchain_capabilities = surface.get_capabilities(&adapter);
-    let swapchain_format = swapchain_capabilities.formats[0];
+        let surface = instance.create_surface(window.clone()).unwrap();
+        let cap = surface.get_capabilities(&adapter);
+        let surface_format = cap.formats[0];
 
-    let mut config = wgpu::SurfaceConfiguration {
-        usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-        format: swapchain_format,
-        width: size.width,
-        height: size.height,
-        present_mode: wgpu::PresentMode::Fifo,
-        alpha_mode: swapchain_capabilities.alpha_modes[0],
-        view_formats: vec![],
-    };
+        // Load the shaders from disk
+        let shader = Shader::new(include_wgsl!("shader.wgsl"), &context);
 
-    surface.configure(&device, &config);
+        let render_pipeline =
+            RenderPipelineBuilder::with_vertex(&shader.entry_point("vs_main"), [])
+                .fragment(&shader.entry_point("fs_main"), [Some(Default::default())])
+                .build();
 
-    // Create the context
-    let context = Context::new(device, queue);
+        let state = State {
+            window,
+            size,
+            surface_format,
+            surface,
+            context,
+            render_pipeline,
+        };
 
-    // Load the shaders from disk
-    let shader = Shader::new(include_wgsl!("shader.wgsl"), &context);
+        state.configure_surface();
 
-    let render_pipeline = RenderPipelineBuilder::with_vertex(&shader.entry_point("vs_main"), [])
-        .fragment(&shader.entry_point("fs_main"), [Some(Default::default())])
-        .build();
+        state
+    }
 
-    event_loop.run(move |event, _, control_flow| {
-        // Have the closure take ownership of the resources.
-        // `event_loop.run` never returns, therefore we must do this to ensure
-        // the resources are properly cleaned up.
-        let _ = (&instance, &adapter, &shader);
+    fn configure_surface(&self) {
+        let surface_config = wgpu::SurfaceConfiguration {
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            format: self.surface_format,
+            // Request compatibility with the sRGB-format texture view we‘re going to create later.
+            view_formats: vec![self.surface_format.add_srgb_suffix()],
+            alpha_mode: wgpu::CompositeAlphaMode::Auto,
+            width: self.size.width,
+            height: self.size.height,
+            desired_maximum_frame_latency: 2,
+            present_mode: wgpu::PresentMode::AutoVsync,
+        };
+        self.surface
+            .configure(&self.context.device(), &surface_config);
+    }
 
-        *control_flow = ControlFlow::Wait;
-        match event {
-            Event::WindowEvent {
-                event: WindowEvent::Resized(size),
-                ..
-            } => {
-                // Reconfigure the surface with the new size
-                config.width = size.width;
-                config.height = size.height;
-                surface.configure(context.device(), &config);
-                // On macos the window needs to be redrawn manually after resizing
-                window.request_redraw();
+    fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
+        self.size = new_size;
+
+        // reconfigure the surface
+        self.configure_surface();
+    }
+
+    fn render(&mut self) {
+        // Create texture view
+        let surface_texture = self
+            .surface
+            .get_current_texture()
+            .expect("failed to acquire next swapchain texture");
+        let texture_view = surface_texture
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor {
+                // Without add_srgb_suffix() the image we will be working with
+                // might not be "gamma correct".
+                format: Some(self.surface_format.add_srgb_suffix()),
+                ..Default::default()
+            });
+
+        let target =
+            RenderTexture::from_texture_view(&texture_view, &self.surface_format.add_srgb_suffix());
+
+        {
+            let mut frame = CommandEncoder::new(None, &self.context);
+
+            {
+                let mut rpass = frame.render_pass(
+                    None,
+                    vec![ColorAttachment {
+                        target,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(wgpu::Color::GREEN),
+                            store: wgt::StoreOp::Store,
+                        },
+                    }],
+                    None,
+                    None,
+                );
+
+                rpass.draw(DrawCall {
+                    bind_groups: vec![],
+                    bind_group_offsets: vec![],
+                    pipeline: self.render_pipeline.clone(),
+                    vertices: vec![],
+                    indices: None,
+                    element_range: 0..3,
+                    instance_range: 0..1,
+                    rasteriser_state: Default::default(),
+                });
             }
-            Event::RedrawRequested(_) => {
-                let surface_texture = surface
-                    .get_current_texture()
-                    .expect("Failed to acquire next swap chain texture");
-
-                let target = RenderTexture::from_surface_texture(&surface_texture);
-
-                {
-                    let mut frame = CommandEncoder::new(None, &context);
-
-                    {
-                        let mut rpass = frame.render_pass(
-                            None,
-                            vec![ColorAttachment {
-                                target,
-                                resolve_target: None,
-                                ops: wgpu::Operations {
-                                    load: wgpu::LoadOp::Clear(wgpu::Color::GREEN),
-                                    store: true,
-                                },
-                            }],
-                            None,
-                            None,
-                        );
-
-                        rpass.draw(DrawCall {
-                            bind_groups: vec![],
-                            bind_group_offsets: vec![],
-                            pipeline: render_pipeline.clone(),
-                            vertices: vec![],
-                            indices: None,
-                            element_range: 0..3,
-                            instance_range: 0..1,
-                            rasteriser_state: Default::default(),
-                        });
-                    }
-                }
-
-                surface_texture.present();
-            }
-            Event::WindowEvent {
-                event: WindowEvent::CloseRequested,
-                ..
-            } => *control_flow = ControlFlow::Exit,
-            _ => {}
         }
-    });
+
+        surface_texture.present();
+    }
+}
+
+#[derive(Default)]
+struct App {
+    state: Option<State>,
+}
+
+impl ApplicationHandler for App {
+    fn resumed(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
+        // Create window object
+        let window = Arc::new(
+            event_loop
+                .create_window(Window::default_attributes())
+                .unwrap(),
+        );
+
+        let state = pollster::block_on(State::new(window.clone()));
+        self.state = Some(state);
+
+        window.request_redraw();
+    }
+
+    fn window_event(
+        &mut self,
+        event_loop: &winit::event_loop::ActiveEventLoop,
+        window_id: winit::window::WindowId,
+        event: WindowEvent,
+    ) {
+        let state = self.state.as_mut().unwrap();
+        match event {
+            WindowEvent::CloseRequested => {
+                println!("The close button was pressed; stopping");
+                event_loop.exit();
+            }
+            WindowEvent::RedrawRequested => {
+                state.render();
+                // Emits a new redraw requested event.
+                state.window.request_redraw();
+            }
+            WindowEvent::Resized(size) => {
+                // Reconfigures the size of the surface. We do not re-render
+                // here as this event is always followed up by redraw request.
+                state.resize(size);
+            }
+            _ => (),
+        }
+    }
 }
 
 fn main() {
-    let event_loop = EventLoop::new();
-    let window = winit::window::Window::new(&event_loop).unwrap();
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        env_logger::init();
-        // Temporarily avoid srgb formats for the swapchain on the web
-        pollster::block_on(run(event_loop, window));
-    }
-    #[cfg(target_arch = "wasm32")]
-    {
-        std::panic::set_hook(Box::new(console_error_panic_hook::hook));
-        console_log::init().expect("could not initialize logger");
-        use winit::platform::web::WindowExtWebSys;
-        // On wasm, append the canvas to the document body
-        web_sys::window()
-            .and_then(|win| win.document())
-            .and_then(|doc| doc.body())
-            .and_then(|body| {
-                body.append_child(&web_sys::Element::from(window.canvas()))
-                    .ok()
-            })
-            .expect("couldn't append canvas to document body");
-        wasm_bindgen_futures::spawn_local(run(event_loop, window));
-    }
+    env_logger::init();
+
+    let event_loop = EventLoop::new().unwrap();
+    event_loop.set_control_flow(ControlFlow::Poll);
+
+    let mut app = App::default();
+    event_loop.run_app(&mut app).unwrap();
 }
